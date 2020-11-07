@@ -1,0 +1,204 @@
+---
+title: "PCA_of_VH_EN_Treatment"
+author: "Laura Hover"
+date: "11/7/2020"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Principal component analysis of vehicle vs. entrectinib treated samples.  LogCPM values were generated in the script: BulkRNAseq_DiffExpAnalysis.Rmd.  
+
+```{r}
+library(tidyverse)
+library(FactoMineR)
+library(ggplot2)
+library(stringr)
+library(RColorBrewer)
+library(plotly)
+```
+
+Read in logCPM values:
+```{r}
+logCPM<-read.delim("VH_EN_logCPM.txt", header=T, sep="\t", stringsAsFactors = FALSE)
+head(logCPM)
+```
+
+Create table of ensemblID and gene symbol to match up throughout analysis
+```{r}
+Genes<-logCPM[, 1:2]
+```
+
+
+
+PCA with logCPM expression
+```{r}
+#transpose matrix so observations are rows and variables are columns:
+row.names(logCPM)<-logCPM$gene_id
+logCPM<-logCPM[,-c(1:2)]
+dat<-data.frame(t(logCPM))
+
+pc <- prcomp(dat, scale=FALSE, center=TRUE) #default - centers and scales
+
+summary(pc)
+#Can see from summary PC1 explains 57% of the variance, PC2 explains 11%, PC3 9%
+
+screeplot(pc)
+```
+
+```{r}
+# loadings
+#head(pc$rotation) #ensembl IDs
+
+#x=the coordinates of the individuals (observations) on the principal components.
+PC1 <- as.matrix(x=pc$x[,1]) 
+PC2 <- as.matrix(pc$x[,2])
+Samples<-colnames(logCPM)
+Treat<-c("VH", "VH", "EN", "EN", "VH", "EN", "VH", "EN", "VH", "VH", "EN")
+Gender<-c("F", "M", "F", "F", "M", "F", "F", "F", "M", "M", "F")
+
+PC <- data.frame(Samples, Treat, Gender, PC1, PC2)
+ggplot(PC, aes(PC1, PC2, color=Samples)) + 
+  geom_text(aes(label = Samples), size = 5) +
+  xlab("PC1") + 
+  ylab("PC2") + 
+  ggtitle("First Two Principal Components")+
+  theme_classic()
+```
+
+Top loadings for PC1 and 2
+```{r}
+PC1_Loadings<-pc$rotation[,1]
+PC1_Loadings<-sort(PC1_Loadings, decreasing=TRUE)
+PC1_Loadings<-data.frame(PC1_Loadings)
+PC1_Loadings$gene_id<-row.names(PC1_Loadings)
+PC1_Loadings<-left_join(PC1_Loadings, Genes, by="gene_id")
+#Many of the top loadings for PC1 include cell cycle genes like: Ccnd1, Cdk1, Top2a, Ccnb1, Rasl11a, Cdkn2a
+
+
+PC2_Loadings<-sort(pc$rotation[,2], decreasing=TRUE)
+PC2_Loadings<-data.frame(PC2_Loadings)
+PC2_Loadings$gene_id<-row.names(PC2_Loadings)
+PC2_Loadings<-left_join(PC2_Loadings, Genes, by="gene_id")
+#Neuronal genes: Neurod6, Neurod1, Emx1, Foxg1, Ddn
+```
+
+
+```{r}
+par(mfrow=c(2,1))
+barplot(PC1_Loadings$PC1_Loadings[1:25],cex.names=.6,main="PC 1 Loadings", las=2, names.arg = PC1_Loadings$gene_symbol[1:25]) #loadings for variables in linear combination for PC1
+barplot(PC2_Loadings$PC2_Loadings[1:25],cex.names=.6,main="PC 2 Loadings", las=2, names.arg=PC2_Loadings$gene_symbol[1:25])
+
+par(mfrow=c(2,1))
+barplot(PC1_Loadings$PC1_Loadings[16792:16817],cex.names=.6,main="PC 1 Loadings", las=2, names.arg=PC1_Loadings$gene_symbol[16792:16817]) #loadings for variables in linear combination for PC1
+barplot(PC2_Loadings$PC2_Loadings[16792:16817],cex.names=.6,main="PC 2 Loadings", las=2, names.arg = PC2_Loadings$gene_symbol[16792:16817])
+```
+PCs 2 and 3
+```{r}
+#x=the coordinates of the individuals (observations) on the principal components.
+PC2 <- as.matrix(x=pc$x[,2]) 
+PC3 <- as.matrix(pc$x[,3])
+
+PC <- data.frame(Samples, Treat, PC2, PC3)
+ggplot(PC, aes(PC2, PC3, color=Treat)) + 
+  geom_point(aes(label = Samples), size = 5) +
+  xlab("PC2") + 
+  ylab("PC3") + 
+  ggtitle("Principal Components 2 and 3")+
+  theme_classic()
+```
+
+PC3 Loadings:
+```{r}
+PC3_Loadings<-sort(pc$rotation[,3], decreasing=TRUE)
+head(PC3_Loadings)
+
+barplot(PC3_Loadings[1:25],cex.names=.6,main="PC 3 Loadings", las=2) #loadings for variables in linear combination for PC1
+```
+
+#3D PCA with top 1000 most variable genes
+Select top 1000 most variable genes
+Read in data if this is the starting point on the script
+```{r}
+#Read in logCPM file:
+logCPM<-read.delim("VH_EN_logCPM.txt", sep = "\t", stringsAsFactors = FALSE)
+
+genes<-logCPM$gene_id
+logCPM<-logCPM[,-c(1:2)]
+row.names(logCPM)<-genes
+
+
+#in logCPM, rows are genes, columns are samples, find most variable across the columns (samples)
+topvar <- apply(logCPM, 1, var)
+#This is now a vector of the variance for each gene
+
+#Next steps: sort genes by variance, taking the top 1000, keeping the gene IDs, merge with logCPM to get expression of the top 1000 most variable genes
+topvar <- as_tibble(names(sort(topvar, decreasing=TRUE))[1:1000]) %>%
+column_to_rownames(var = "value") %>%
+merge(logCPM, by="row.names")
+```
+
+Change format so the rownames are the sample IDs and the columns contain expression values only
+```{r}
+## tidyverse manipulation of the data to change the format
+Trk_asrow <- as_tibble(gather(topvar, ID, logCPM, 2:ncol(topvar))) # gathers into three columns: row.names (genes), sample IDs and the logCPM values
+Trk_asrow <- spread(Trk_asrow, Row.names, "logCPM") # spreads into a table where the genes are the columns and the samples are the rows
+Trk_asrow <- column_to_rownames(Trk_asrow, var = "ID") # makes the row names the sample IDs so the data table contains only expression values
+```
+
+
+run PCA on samples and generates eigenvectors
+```{r}
+Sample_pca <- FactoMineR::PCA(Trk_asrow, scale.unit=TRUE, ncp=5, graph=TRUE)
+ev <- Sample_pca$eig
+```
+
+generates strings with the percentage of the variation assigned to each of the first five PCs
+```{r}
+PC1.per <- paste("PC1 (", round(ev[1,2], 1), "%)", sep = "")
+PC2.per <- paste("PC2 (", round(ev[2,2], 1), "%)", sep = "")
+PC3.per <- paste("PC3 (", round(ev[3,2], 1), "%)", sep = "")
+PC4.per <- paste("PC3 (", round(ev[4,2], 1), "%)", sep = "")
+PC5.per <- paste("PC3 (", round(ev[5,2], 1), "%)", sep = "")
+```
+
+extract the coordinates for all of our samples on the 1st 5 PC dimensions
+```{r}
+Sample_coord <- round(Sample_pca$ind$coord,4)
+Sample_coord <- rownames_to_column(as_tibble(data.frame(Sample_coord)), "ID" )
+Sample_coord <- rename(Sample_coord, PC1=Dim.1, PC2=Dim.2, PC3=Dim.3, PC4=Dim.4, PC5=Dim.5)
+```
+
+set up the groups for coloring the plot based on the meta data
+```{r}
+meta<-data.frame(row.names(Trk_asrow))
+meta$Treat<-c(str_sub(meta$row.names.Trk_asrow.,1,2))  # Make new column with just EN or VH from each sample name
+names(meta)<-c("Samples", "Treat")
+
+#Set color scheme, colors from RColorBrewer
+cols <- brewer.pal(4, "Paired")
+set1<-c("#1F78B4", "#33A02C")
+```
+
+## interactive 3D plot
+Use a negative on the Z axis to help visualize the clusters/samples
+```{r}
+p <- plot_ly(Sample_coord, x = ~-PC1, y = ~PC2, z = ~-PC3, type = "scatter3d",
+color = meta$Treat, colors = set1,
+marker=list(size=20),
+#symbol = meta$Treat, symbols = c("0", "1"), # if you want symbols by region remove # from start of this line
+text = meta$Samples, hoverinfo = "text") %>%
+layout(title = "top 1000", scene = list(
+xaxis = list(title = PC1.per, titlefont=list(size=20), gridcolor=toRGB("gray50"),
+  gridwidth = 4, tickfont=list(size=16)),
+yaxis = list(title = PC2.per, titlefont=list(size=20), gridcolor=toRGB("gray50"),
+  gridwidth = 4, tickfont=list(size=16)),
+zaxis = list(title = PC3.per, titlefont=list(size=20), gridcolor=toRGB("gray50"),
+  gridwidth = 4, tickfont=list(size=16))
+))
+
+p
+
+```
+
