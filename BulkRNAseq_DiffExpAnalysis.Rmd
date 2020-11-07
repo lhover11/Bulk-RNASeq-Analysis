@@ -1,0 +1,170 @@
+---
+title: "Differential Expression Analysis comparing vehicle treated tumor to Entrectinib treated tumor in vivo"
+author: "Laura Hover"
+date: "7/10/2020"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Differential expression analysis using EdgeR/Limma.  Comparing 6 vehicle treated tumors (VH) to 5 entrectinib (EN) treated tumors in vivo.  Treatment was for 2 days, BID.  FASTQs were aligned using the CAB automapper to the mm10 reference genome, counts table was generated using RSEM.
+
+```{r}
+library(tidyverse)
+```
+
+Read first 2 samples and make sure they have the same number of rows and the same genes in each row
+```{r}
+sample.1 <-read_tsv("Sample1-STRANDED_RSEM_count.txt", col_names=TRUE)
+
+sample.2 <- read_tsv("Sample2-STRANDED_RSEM_count.txt", col_names=TRUE)
+
+nrow(sample.1) == nrow(sample.2)
+all(sample.1$geneID == sample.2$geneID)
+```
+
+Make the matrix of counts for all samples
+```{r}
+# make the matrix
+all.data<-full_join(x=sample.1, y=sample.2, by=c("geneID", "geneSymbol", "bioType", "annotationLevel"))
+```
+
+Clean up column names:
+```{r}
+library(janitor)
+all.data<-clean_names(all.data)
+```
+
+
+Rename samples
+```{r}
+all.data<-all.data %>% rename(VH1=x1242880) %>% rename(EN1=x1242885)%>%
+  rename(VH2=x1242883) %>% rename(VH3=x1242886)%>%
+  rename(VH4=x1357895) %>% rename(EN2=x1357897) %>%
+  rename(VH5=x1242881) %>% rename(EN3=x1242884) %>%
+  rename(EN4=x1242882) %>% rename(EN5=x1357898) %>%
+  rename(VH6=x1357896)
+```
+
+
+Output table for future use:
+```{r}
+write_csv(all.data, "VH_EN_RSEM_Counts.csv", quote = FALSE)
+
+```
+
+Differential expression analysis:
+```{r}
+library(edgeR)
+library(limma)
+```
+
+
+Make genes rownames and remove extra columns:
+```{r}
+Genes<-all.data[,1:2]
+all.data<-data.frame(all.data)
+row.names(all.data)<-all.data$gene_id
+all.data<-all.data[, -c(1:4)]
+
+#Remove ERCC spike ins (no spike ins added)
+all.data2<-all.data[!grepl("ERCC-", row.names(all.data)),]
+```
+
+
+
+Input metadata
+```{r}
+#Get order of columns:
+names(all.data)
+# define groups for differential comparison
+Treatment <- c("VH", "VH", "EN", "EN", "VH", "EN", "VH", "EN", "VH", "VH","EN")
+
+# create factor levels from the variables
+Treatment <- factor(Treatment, levels = c("VH", "EN"))
+
+```
+
+Create a DGEList object that holds the dataset for edgeR and calculations performed on the dataset
+```{r}
+dge <- DGEList(counts = all.data, group = Treatment)
+```
+
+Step to remove lowly expressed genes.  Here the threshold for keeping a gene is if 5 or more samples have a cpm >1.0 because our smallest subgroup is comprised of 5 samples
+```{r}
+keep <- rowSums(cpm(dge)>1.0) >= 5 
+dge <- dge[keep, , keep.lib.sizes=FALSE]
+```
+
+Normalize for the library sizes (dge$samples shows what the calcNormFactors are for the samples)
+```{r}
+dge <- calcNormFactors(dge)
+dge$samples
+```
+Above 30 million reads for each sample, norm.factors all around 1, library sizes between 32-69 million reads
+
+
+Visualize the data and see how the samples group using an MDS plot.  
+Do the samples group by the variable you plan to use for differential expression analysis?
+```{r}
+plotMDS(dge)
+```
+
+Next, generate a design matrix
+```{r}
+# set up design model without batch correction for gender
+design <- model.matrix(~ 0 + Treatment)
+colnames(design)[1:2] <- c("VH", "EN")
+#check to make sure colnames of your design matrix line up correctly
+```
+
+
+Differential Expression Analysis
+```{r}
+v <- voom(dge, design, plot = F)
+fit <- lmFit(v, design)
+# define the contrast (and contrast direction) here
+cont.matrix <- makeContrasts(Diff = (VH - EN), levels = design)
+fitcon <- contrasts.fit(fit, cont.matrix)
+fitcon <- eBayes(fitcon)
+dt <- decideTests(fitcon)
+summary(dt)
+```
+
+#115 genes down, 515 genes up
+
+
+
+Export the Differential Expression Table
+```{r}
+results <- topTable(fitcon, n = nrow(dge))
+
+#Join with Gene symbols
+results$gene_id<-row.names(results)
+results<-left_join(results, Genes, by="gene_id")
+
+write.table(results, file = "VH_EN_fitconresults.txt", sep = "\t", row.names = T, quote = F)
+```
+
+Export the expression data as logCPM
+```{r}
+logCPM <- cpm(dge,log=TRUE)
+
+#Include gene symbols:
+logCPM<-data.frame(logCPM)
+logCPM$gene_id<-row.names(logCPM)
+logCPM<-left_join(logCPM, Genes, by="gene_id")
+
+#Reorder columns:
+logCPM<-logCPM %>% select(gene_id, gene_symbol, everything())
+
+write.table(logCPM, file = "VH_EN_logCPM.txt", sep = "\t", row.names =T, quote = F)
+```
+
+Plot Mean-Difference plot (MA plot) Of expression data
+```{r}
+plotMD(fitcon, column=1, status=dt[,1], main=colnames(fitcon)[1], 
+       xlim=c(-8,13))
+```
+
