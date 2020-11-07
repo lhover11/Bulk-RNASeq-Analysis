@@ -1,4 +1,2 @@
-# Bulk RNAseq analysis
-
-
-Scripts for Bulk RNAseq analysis including differential gene expression and pathway analysis including GO ontology, GSEA and ssGSEA implemented through R
+# Bulk RNASeq Analysis
+ Scripts to analyze bulk RNAseq data starting with counts tables
