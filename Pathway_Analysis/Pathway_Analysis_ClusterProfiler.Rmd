@@ -187,7 +187,7 @@ C2_df$Order<-1:nrow(C2_df)
 #I want to look at the GSEA result for Hallmark E2F Targets, 2nd results in our table
 gseaplot(Hall, geneSetID = 2, by = "runningScore", title = Hall$Description[2])
 
-#To look at multiple results and plot in different colors (E2F targets and Myc Targets V1)
+#To look at multiple results and plot in different colors (E2F targets and Myc Targets V1, 2 and 6 are the row numbers of these pathways in our results table)
 gseaplot2(Hall, geneSetID = c(2,6), pvalue_table = FALSE,
           color = c("#AD3D6F", "#E17327"), ES_geom = "dot")
 
