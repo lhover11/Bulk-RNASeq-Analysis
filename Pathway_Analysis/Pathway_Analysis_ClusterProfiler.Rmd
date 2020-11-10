@@ -1,0 +1,232 @@
+---
+title: "ClusterProfiler for Bulk RNAseq Pathway Analysis"
+author: "Laura Hover"
+date: "8/6/2020"
+output: html_document
+---
+
+Performing Gene Ontology enrichment analysis of Gene Ontology (GO) and Gene Set Enrichment Analysis (GSEA) on RNAseq results comparing Trk-inhibited tumors to vehicle treated tumors using the package ClusterProfiler in R.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(clusterProfiler)
+library(DOSE)
+library(msigdbr)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(enrichplot)
+```
+
+
+#Read in data (results from EdgeR-Limma)
+Need logFC, adj.P.Val and geneID or symbol
+Load in the example data below to see the format
+
+This data is from an experiment comparing Trk-inhibited samples (IN) to vehicle treated samples (VH); in this case the genes upregulated in the VH samples have a postive logFC
+```{r}
+results<-read_tsv("Example_fitconresults.txt")
+```
+
+#Differentially expressed genes
+All genes with adjusted pvalue<0.05 and absolute logFC>0.5
+```{r}
+VH<-results %>% filter(adj.P.Val<=0.05, (logFC>0.5|logFC<0.5))  #630 genes
+
+#Arrange by logFC
+VH<-VH %>% arrange(desc(logFC))
+
+```
+
+Input significant data format for ClusterProfiler:
+```{r}
+VH<-data.frame(VH)  #Code won't work if your data is in a tibble
+
+## feature 1: logFC (column 2 in dataframe)
+geneList <- VH[,2]
+
+## feature 2: named vector (gene symbols, column 10 in dataframe)
+names(geneList) <- as.character(VH[,10])
+
+```
+
+Background data is all 16,817 genes from our DE analysis (genes expressed in our samples)
+```{r}
+All<-data.frame(results)
+
+##Find out which gene symbols are duplicated in our data:
+dups<-which(duplicated(All$gene_symbol))  #16 genes
+dups<-All[dups,]
+dups<-dups$gene_symbol
+
+check<-All %>% filter(gene_symbol %in% dups)
+
+#Only Rnu3b3, Rmrp have adj. p.value<0.05, remaining 14 genes are not sign different in the 2 groups.  For now keep the first instance of each gene.
+#Since we only had 2 repeats of gene symbols out of 630 significantly DE genes, continue with gene sybmols.  Alternatively use the Ensembl ID to avoid this issue
+
+All<-distinct(All, gene_symbol, .keep_all = TRUE)  #Keep first row for each gene
+
+
+## feature 1: logFC
+Background <- All[,2]
+## feature 2: named vector (gene symbols)
+names(Background) <- as.character(All[,10])
+## feature 3: decreasing order
+Background<- sort(Background, decreasing = TRUE)
+head(Background)
+
+```
+
+
+#GO over-representation test
+
+Frist we'll try to determine if biological functions or processes are over-represented in our gene sets, either the treated the VH DE genes.  To do this we just need our list of DE genes and our background genes
+
+First we need to make the gene symbols ENTREZID
+```{r}
+library(org.Mm.eg.db)
+Up<-names(geneList)[(geneList) > .5]
+Down<-names(geneList)[(geneList) < -0.5]
+
+IDs_Up<-mapIds(org.Mm.eg.db, Up, 'ENTREZID', 'SYMBOL')
+IDs_Down<-mapIds(org.Mm.eg.db, Down, 'ENTREZID', 'SYMBOL')
+
+back<-names(Background)
+Back_IDs<-mapIds(org.Mm.eg.db, back, 'ENTREZID', 'SYMBOL')
+```
+
+#Gene upregulated in VH compared to IN
+```{r}
+ego <- enrichGO(gene= IDs_Up,
+                universe=Back_IDs,  #background, all genes from limma analysis
+                OrgDb= org.Mm.eg.db,
+                ont= "BP", #Biological Process
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.01,
+                qvalueCutoff  = 0.05,
+                readable      = TRUE)
+head(ego)
+ego_Up<-as.data.frame(ego@result)
+
+#Write out results as table
+write.csv(ego_Up, "nameofyourfile.csv")
+```
+
+
+```{r}
+#Genes upregulated in IN compared to VH
+ego_Down <- enrichGO(gene= IDs_Down,
+                universe=Back_IDs,  #background, all genes from limma analysis
+                OrgDb= org.Mm.eg.db,
+                ont= "BP", #Biological Process
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.01,
+                qvalueCutoff  = 0.05,
+                readable      = TRUE)
+
+ego_Down<-as.data.frame(ego_Down@result) #no sign results
+```
+
+
+#Gene Set Enrichment Analysis
+Run GSEA using MSigDB gene sets
+1st make TERM2GENE dataframes
+```{r}
+#Hallmark gene sets, keep geneset name and gene symbol
+Hallmark<- msigdbr(species = "Mus musculus", category = "H") %>% dplyr::select(gs_name, gene_symbol)
+
+#C2 gene sets, keep geneset name and gene symbol
+C2 <- msigdbr(species = "Mus musculus", category = "C2") %>% 
+  dplyr::select(gs_name, gene_symbol)
+head(C2)
+
+```
+
+To run GSEA we need to rank our genes slightly differently: here we'll  use signed fold change * -log10(pvalue)
+With GSEA, you can use all genes not just the DE ones.  GSEA can detect when there are small changes in a coordinated way
+```{r}
+All$Rank<-All$logFC*-log10(All$P.Value)
+
+
+## feature 1: logFC
+Gsea.genes <- All$Rank
+## feature 2: named vector (gene symbols)
+names(Gsea.genes) <- as.character(All[,10])
+## feature 3: decreasing order
+Gsea.genes<- sort(Gsea.genes, decreasing = TRUE)
+head(Gsea.genes)
+```
+
+
+run GSEA step with 1000 permutations
+```{r}
+Hall<- GSEA(Gsea.genes, nPerm=1000, pvalueCutoff = 0.05, TERM2GENE=Hallmark, verbose=TRUE)
+head(Hall)
+
+gsea_C2<- GSEA(Gsea.genes, nPerm=1000, pvalueCutoff = 0.05, TERM2GENE=C2, verbose=TRUE)
+head(gsea_C2)
+
+```
+
+```{r}
+Hall_df<-data.frame(Hall@result)
+Hall_df$Order<-1:nrow(Hall_df)
+
+C2_df<-as.data.frame(gsea_C2@result)
+C2_df$Order<-1:nrow(C2_df)
+
+```
+
+
+#Visualization of GSEA results:
+```{r}
+#I want to look at the GSEA result for Hallmark E2F Targets, 2nd results in our table
+gseaplot(Hall, geneSetID = 2, by = "runningScore", title = Hall$Description[2])
+
+#To look at multiple results and plot in different colors (E2F targets and Myc Targets V1)
+gseaplot2(Hall, geneSetID = c(2,6), pvalue_table = FALSE,
+          color = c("#AD3D6F", "#E17327"), ES_geom = "dot")
+
+```
+
+
+```{r}
+sessionInfo()
+```
+R version 3.6.1 (2019-07-05)
+Platform: x86_64-w64-mingw32/x64 (64-bit)
+Running under: Windows 10 x64 (build 18363)
+
+Matrix products: default
+
+locale:
+[1] LC_COLLATE=English_United States.1252  LC_CTYPE=English_United States.1252    LC_MONETARY=English_United States.1252 LC_NUMERIC=C                          
+[5] LC_TIME=English_United States.1252    
+
+attached base packages:
+[1] parallel  stats4    stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] org.Mm.eg.db_3.10.0    AnnotationDbi_1.48.0   IRanges_2.20.2         S4Vectors_0.24.3       Biobase_2.46.0         BiocGenerics_0.32.0    forcats_0.4.0         
+ [8] stringr_1.4.0          purrr_0.3.3            readr_1.3.1            tibble_3.0.4           tidyverse_1.3.0        enrichplot_1.6.1       tidyr_1.0.0           
+[15] msigdbr_7.0.1          DOSE_3.12.0            clusterProfiler_3.14.3 dplyr_1.0.0            ggplot2_3.3.2          shinythemes_1.1.2      shiny_1.4.0           
+
+loaded via a namespace (and not attached):
+ [1] fgsea_1.12.0        colorspace_1.4-1    ellipsis_0.3.0      ggridges_0.5.2      rsconnect_0.8.16    qvalue_2.18.0       fs_1.3.1            rstudioapi_0.11    
+ [9] farver_2.0.3        urltools_1.7.3      graphlayouts_0.6.0  ggrepel_0.8.1       bit64_0.9-7         fansi_0.4.1         lubridate_1.7.4     xml2_1.2.2         
+[17] splines_3.6.1       GOSemSim_2.12.1     knitr_1.27          polyclip_1.10-0     jsonlite_1.6        broom_0.7.1         GO.db_3.10.0        dbplyr_1.4.2       
+[25] ggforce_0.3.1       BiocManager_1.30.10 compiler_3.6.1      httr_1.4.1          rvcheck_0.1.8       backports_1.1.5     assertthat_0.2.1    Matrix_1.2-17      
+[33] fastmap_1.0.1       cli_2.0.2           later_1.0.0         tweenr_1.0.1        htmltools_0.4.0     prettyunits_1.1.0   tools_3.6.1         igraph_1.2.5       
+[41] gtable_0.3.0        glue_1.4.1          reshape2_1.4.3      DO.db_2.9           fastmatch_1.1-0     Rcpp_1.0.3          cellranger_1.1.0    vctrs_0.3.2        
+[49] ggraph_2.0.2        xfun_0.12           rvest_0.3.5         mime_0.8            lifecycle_0.2.0     europepmc_0.3       MASS_7.3-51.6       scales_1.1.0       
+[57] tidygraph_1.1.2     hms_0.5.3           promises_1.1.0      RColorBrewer_1.1-2  memoise_1.1.0       gridExtra_2.3       triebeard_0.3.0     stringi_1.4.5      
+[65] RSQLite_2.2.0       BiocParallel_1.20.1 rlang_0.4.7         pkgconfig_2.0.3     lattice_0.20-38     labeling_0.3        cowplot_1.0.0       bit_1.1-15.1       
+[73] tidyselect_1.1.0    plyr_1.8.5          magrittr_1.5        R6_2.4.1            generics_0.0.2      DBI_1.1.0           pillar_1.4.3        haven_2.2.0        
+[81] withr_2.1.2         modelr_0.1.5        crayon_1.3.4        viridis_0.5.1       progress_1.2.2      grid_3.6.1          readxl_1.3.1        data.table_1.12.8  
+[89] blob_1.2.1          reprex_0.3.0        digest_0.6.23       xtable_1.8-4        httpuv_1.5.2        gridGraphics_0.5-0  munsell_0.5.0       viridisLite_0.3.0  
+[97] ggplotify_0.0.5    
+
