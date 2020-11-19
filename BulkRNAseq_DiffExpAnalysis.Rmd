@@ -39,11 +39,11 @@ all.data<-clean_names(all.data)
 
 Rename samples
 ```{r}
-all.data<-all.data %>% rename(VH1=x1242880) %>% rename(EN1=x1242885)%>%
+all.data<-all.data %>% rename(VH1=x1242880) %>% rename(IN1=x1242885)%>%
   rename(VH2=x1242883) %>% rename(VH3=x1242886)%>%
-  rename(VH4=x1357895) %>% rename(EN2=x1357897) %>%
-  rename(VH5=x1242881) %>% rename(EN3=x1242884) %>%
-  rename(EN4=x1242882) %>% rename(EN5=x1357898) %>%
+  rename(VH4=x1357895) %>% rename(IN2=x1357897) %>%
+  rename(VH5=x1242881) %>% rename(IN3=x1242884) %>%
+  rename(IN4=x1242882) %>% rename(IN5=x1357898) %>%
   rename(VH6=x1357896)
 ```
 
