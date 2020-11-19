@@ -47,6 +47,8 @@ summary(pc)
 screeplot(pc)
 ```
 
+
+#Look at PCA and top loadings for PC1 and PC2
 ```{r}
 # loadings
 #head(pc$rotation) #ensembl IDs
@@ -94,7 +96,8 @@ par(mfrow=c(2,1))
 barplot(PC1_Loadings$PC1_Loadings[16792:16817],cex.names=.6,main="PC 1 Loadings", las=2, names.arg=PC1_Loadings$gene_symbol[16792:16817]) #loadings for variables in linear combination for PC1
 barplot(PC2_Loadings$PC2_Loadings[16792:16817],cex.names=.6,main="PC 2 Loadings", las=2, names.arg = PC2_Loadings$gene_symbol[16792:16817])
 ```
-PCs 2 and 3
+
+PCs 2 and 3, look at top loadings for PC3
 ```{r}
 #x=the coordinates of the individuals (observations) on the principal components.
 PC2 <- as.matrix(x=pc$x[,2]) 
@@ -130,50 +133,52 @@ row.names(logCPM)<-genes
 
 
 #in logCPM, rows are genes, columns are samples, find most variable across the columns (samples)
-topvar <- apply(logCPM, 1, var)
+mostvar <- apply(logCPM, 1, var)
 #This is now a vector of the variance for each gene
 
 #Next steps: sort genes by variance, taking the top 1000, keeping the gene IDs, merge with logCPM to get expression of the top 1000 most variable genes
-topvar <- as_tibble(names(sort(topvar, decreasing=TRUE))[1:1000]) %>%
-column_to_rownames(var = "value") %>%
-merge(logCPM, by="row.names")
+mostvar<-sort(mostvar, decreasing = TRUE)
+
+#Keep top 1000 most variable genes
+mostvar<-mostvar[1:1000]
+
+#Keep only the most variable genes in our logCPM table:
+var<-logCPM[mostvar,]
 ```
 
 Change format so the rownames are the sample IDs and the columns contain expression values only
 ```{r}
 ## tidyverse manipulation of the data to change the format
-Trk_asrow <- as_tibble(gather(topvar, ID, logCPM, 2:ncol(topvar))) # gathers into three columns: row.names (genes), sample IDs and the logCPM values
-Trk_asrow <- spread(Trk_asrow, Row.names, "logCPM") # spreads into a table where the genes are the columns and the samples are the rows
-Trk_asrow <- column_to_rownames(Trk_asrow, var = "ID") # makes the row names the sample IDs so the data table contains only expression values
+var<-data.frame(t(var))
 ```
 
 
 run PCA on samples and generates eigenvectors
 ```{r}
-Sample_pca <- FactoMineR::PCA(Trk_asrow, scale.unit=TRUE, ncp=5, graph=TRUE)
-ev <- Sample_pca$eig
+pca<-FactoMineR::PCA(var, scale.unit=FALSE, ncp=5, graph=TRUE)
+ev<-pca$eig
 ```
 
 generates strings with the percentage of the variation assigned to each of the first five PCs
 ```{r}
-PC1.per <- paste("PC1 (", round(ev[1,2], 1), "%)", sep = "")
-PC2.per <- paste("PC2 (", round(ev[2,2], 1), "%)", sep = "")
-PC3.per <- paste("PC3 (", round(ev[3,2], 1), "%)", sep = "")
-PC4.per <- paste("PC3 (", round(ev[4,2], 1), "%)", sep = "")
-PC5.per <- paste("PC3 (", round(ev[5,2], 1), "%)", sep = "")
+PC1.per<-paste("PC1 (", round(ev[1,2], 1), "%)", sep = "")
+PC2.per<-paste("PC2 (", round(ev[2,2], 1), "%)", sep = "")
+PC3.per<-paste("PC3 (", round(ev[3,2], 1), "%)", sep = "")
+PC4.per<-paste("PC3 (", round(ev[4,2], 1), "%)", sep = "")
+PC5.per<-paste("PC3 (", round(ev[5,2], 1), "%)", sep = "")
 ```
 
 extract the coordinates for all of our samples on the 1st 5 PC dimensions
 ```{r}
-Sample_coord <- round(Sample_pca$ind$coord,4)
-Sample_coord <- rownames_to_column(as_tibble(data.frame(Sample_coord)), "ID" )
-Sample_coord <- rename(Sample_coord, PC1=Dim.1, PC2=Dim.2, PC3=Dim.3, PC4=Dim.4, PC5=Dim.5)
+Sample_coord<-round(pca$ind$coord,4)
+Sample_coord<-data.frame(Sample_coord)
+Sample_coord<-rename(Sample_coord, PC1=Dim.1, PC2=Dim.2, PC3=Dim.3, PC4=Dim.4, PC5=Dim.5)
 ```
 
 set up the groups for coloring the plot based on the meta data
 ```{r}
-meta<-data.frame(row.names(Trk_asrow))
-meta$Treat<-c(str_sub(meta$row.names.Trk_asrow.,1,2))  # Make new column with just EN or VH from each sample name
+meta<-data.frame(row.names(var))
+meta$Treat<-c(str_sub(meta$row.names.var.,1,2))  # Make new column with just EN or VH from each sample name
 names(meta)<-c("Samples", "Treat")
 
 #Set color scheme, colors from RColorBrewer
