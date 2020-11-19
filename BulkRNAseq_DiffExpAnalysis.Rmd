@@ -8,7 +8,8 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Differential expression analysis using EdgeR/Limma.  Comparing 6 vehicle treated tumors (VH) to 5 entrectinib (EN) treated tumors in vivo.  Treatment was for 2 days, BID.  FASTQs were aligned using the CAB automapper to the mm10 reference genome, counts table was generated using RSEM.
+Differential expression analysis using EdgeR/Limma.  Comparing 6 vehicle treated tumors (VH) to 5 entrectinib (EN) treated tumors in vivo.
+Treatment was for 2 days, BID.  FASTQs were aligned using the CAB automapper to the mm10 reference genome, counts table was generated using RSEM.
 
 ```{r}
 library(tidyverse)
