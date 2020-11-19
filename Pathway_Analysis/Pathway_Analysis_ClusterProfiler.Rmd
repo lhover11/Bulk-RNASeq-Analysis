@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(clusterProfiler)
 library(DOSE)
 library(msigdbr)
-library(tidyr)
+library(tidyverse)
 library(dplyr)
 library(ggplot2)
 library(enrichplot)
@@ -35,7 +35,7 @@ results<-read_tsv("Example_fitconresults.txt")
 #Differentially expressed genes
 All genes with adjusted pvalue<0.05 and absolute logFC>0.5
 ```{r}
-VH<-results %>% filter(adj.P.Val<=0.05, (logFC>0.5|logFC<0.5))  #630 genes
+VH<-results %>% filter(adj.P.Val<=0.05, (logFC>0.5|logFC<(-0.5)))  #630 genes
 
 #Arrange by logFC
 VH<-VH %>% arrange(desc(logFC))
