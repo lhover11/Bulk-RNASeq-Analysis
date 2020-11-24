@@ -1,5 +1,5 @@
 #Script to perform single sample GSEA using GSVA in R
-#Here I'm using ssGSEA to score human bulk RNAseq glioma samples for single cell derived signatures
+#Here I'm using ssGSEA to score human bulk RNAseq glioma samples for single cell RNAseq derived signatures
 
 library(tidyverse)
 library(GSVA)
